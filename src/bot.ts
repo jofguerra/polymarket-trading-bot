@@ -75,11 +75,22 @@ export class PolymarketCopyTradingBot {
 
       logger.info('Starting Polymarket Copy Trading Bot');
 
-      // Connect to WebSocket
-      await this.wsClient.connect();
-
-      // Set up WebSocket handlers
-      this.setupWebSocketHandlers();
+      // Try to connect to WebSocket with timeout (optional)
+      try {
+        const wsConnectPromise = this.wsClient.connect();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000)
+        );
+        
+        await Promise.race([wsConnectPromise, timeoutPromise]);
+        logger.info('WebSocket connected successfully');
+        
+        // Set up WebSocket handlers
+        this.setupWebSocketHandlers();
+      } catch (wsError) {
+        logger.warn('WebSocket connection failed, continuing without real-time updates', wsError);
+        // Continue anyway - bot will use polling instead
+      }
 
       // Start monitoring loop
       this.startMonitoring();
