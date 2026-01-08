@@ -81,7 +81,7 @@ export class TradingEngine {
       }
 
       // Get current market price with slippage tolerance
-      const midPrice = await this.clobClient.getMidPrice(sourceTrade.marketId, sourceTrade.outcome);
+      const midPrice = await this.clobClient.getMidPrice(sourceTrade.marketId);
       const adjustedPrice = this.adjustPriceForSlippage(midPrice, sourceTrade.side);
 
       // Place the order
