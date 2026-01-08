@@ -1,87 +1,105 @@
-import axios from 'axios';
 import { config } from '../config';
 import { logger } from '../logger';
-import { placeOrder } from '../api/clobClient';
+import { getUserTrades, placeOrder } from '../api/clobClient';
+import { Trade } from '../types';
 import { Side } from '@polymarket/clob-client';
 
-interface TradeActivity {
-  id: string;
-  type: string;
-  user: string;
-  timestamp: string;
-  trade_type: string;
-  collateral: string;
-  fee: string;
-  price: string;
-  size: string;
-  market: string;
-  outcome: string;
-  tx_hash: string;
-}
+let lastProcessedTimestamp = 0;
 
-let lastProcessedTimestamp = new Date(0);
-
-const fetchSourceTraderActivity = async (): Promise<TradeActivity[]> => {
-  try {
-    const response = await axios.get(`${config.dataApiUrl}/activity`, {
-      params: {
-        user: config.sourceTrader,
-        type: 'TRADE',
-        limit: 100,
-      },
-    });
-    return response.data.data;
-  } catch (error) {
-    logger.error('Failed to fetch source trader activity', error);
-    return [];
-  }
-};
-
-const getMarketDetails = async (marketId: string) => {
-  // This is a placeholder - you need to implement a way to get market details
-  // like tickSize and negRisk, possibly from another API or a hardcoded map.
-  return { tickSize: '0.01', negRisk: false };
-};
-
+/**
+ * Monitor source trader and copy their trades
+ */
 export const monitorAndCopyTrades = async () => {
-  logger.info('Checking for new trades to copy...');
-  const activities = await fetchSourceTraderActivity();
+  try {
+    logger.info('Checking for new trades from source trader...');
 
-  const newActivities = activities.filter(
-    (activity) => new Date(activity.timestamp) > lastProcessedTimestamp
-  );
+    // Fetch trades from the source trader using Data API
+    const trades = await getUserTrades(config.sourceTrader, 100, 0);
 
-  if (newActivities.length === 0) {
-    logger.info('No new trades found.');
-    return;
-  }
-
-  // Sort by timestamp to process in order
-  newActivities.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-
-  for (const activity of newActivities) {
-    try {
-      const tradeSize = parseFloat(activity.size);
-      const tradePrice = parseFloat(activity.price);
-      const side = activity.trade_type.toUpperCase() as Side;
-
-      // Apply risk management
-      const yourTradeSize = tradeSize * (config.riskPercentage / 100);
-      const cappedTradeSize = Math.min(yourTradeSize, config.maxPositionSize);
-
-      if (cappedTradeSize > 0) {
-        logger.info(`Copying trade: ${side} ${cappedTradeSize} at ${tradePrice} on market ${activity.market}`);
-        
-        // You need to map the market ID from the activity to the token ID for the order
-        // This is a placeholder - you'll need to implement this mapping
-        const marketTokenId = activity.market; // Placeholder
-
-        await placeOrder(marketTokenId, side, tradePrice, cappedTradeSize);
-      }
-
-      lastProcessedTimestamp = new Date(activity.timestamp);
-    } catch (error) {
-      logger.error(`Failed to copy trade ${activity.id}`, error);
+    if (trades.length === 0) {
+      logger.debug('No trades found for source trader');
+      return;
     }
+
+    // Filter for new trades (trades after the last processed timestamp)
+    const newTrades = trades.filter((trade) => trade.timestamp > lastProcessedTimestamp);
+
+    if (newTrades.length === 0) {
+      logger.debug('No new trades to copy');
+      return;
+    }
+
+    logger.info(`Found ${newTrades.length} new trades to copy`);
+
+    // Sort trades by timestamp to process in order
+    newTrades.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Process each trade
+    for (const trade of newTrades) {
+      await executeCopyTrade(trade);
+      lastProcessedTimestamp = Math.max(lastProcessedTimestamp, trade.timestamp);
+    }
+  } catch (error) {
+    logger.error('Error in monitorAndCopyTrades', error);
+  }
+};
+
+/**
+ * Execute a copy trade based on source trader's trade
+ */
+const executeCopyTrade = async (sourceTrade: Trade) => {
+  try {
+    logger.info('Executing copy trade', {
+      marketId: sourceTrade.marketId,
+      side: sourceTrade.side,
+      size: sourceTrade.size,
+      price: sourceTrade.price,
+    });
+
+    // Calculate order size based on risk management
+    const scaledSize = sourceTrade.size * (config.riskPercentage / 100);
+    const cappedSize = Math.min(scaledSize, config.maxPositionSize);
+
+    if (cappedSize <= 0) {
+      logger.warn('Calculated order size is zero or negative', { scaledSize, cappedSize });
+      return;
+    }
+
+    // Apply slippage tolerance to price
+    const adjustedPrice = adjustPriceForSlippage(sourceTrade.price, sourceTrade.side);
+
+    logger.info(`Placing order: ${sourceTrade.side} ${cappedSize} at ${adjustedPrice}`);
+
+    // Place the order using CLOB SDK
+    await placeOrder(
+      sourceTrade.marketId,
+      sourceTrade.side as Side,
+      adjustedPrice,
+      cappedSize
+    );
+
+    logger.info('Copy trade executed successfully', {
+      marketId: sourceTrade.marketId,
+      side: sourceTrade.side,
+      size: cappedSize,
+      price: adjustedPrice,
+    });
+  } catch (error) {
+    logger.error('Failed to execute copy trade', error);
+  }
+};
+
+/**
+ * Adjust price for slippage tolerance
+ */
+const adjustPriceForSlippage = (midPrice: number, side: 'BUY' | 'SELL'): number => {
+  const slippageAdjustment = midPrice * (config.slippageTolerance / 100);
+
+  if (side === 'BUY') {
+    // For buy orders, increase price slightly to ensure execution
+    return midPrice + slippageAdjustment;
+  } else {
+    // For sell orders, decrease price slightly to ensure execution
+    return Math.max(0, midPrice - slippageAdjustment);
   }
 };
