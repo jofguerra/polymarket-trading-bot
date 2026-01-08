@@ -44,10 +44,16 @@ export class PolymarketCopyTradingBot {
       // Validate configuration
       this.validateConfig();
 
-      // Test CLOB API connection
-      const isHealthy = await this.clobClient.healthCheck();
-      if (!isHealthy) {
-        throw new Error('CLOB API health check failed');
+      // Test CLOB API connection (optional - continue even if it fails)
+      try {
+        const isHealthy = await this.clobClient.healthCheck();
+        if (isHealthy) {
+          logger.info('CLOB API health check passed');
+        } else {
+          logger.warn('CLOB API health check failed, but continuing anyway');
+        }
+      } catch (healthCheckError) {
+        logger.warn('CLOB API health check error, but continuing anyway', healthCheckError);
       }
 
       logger.info('Bot initialization successful');

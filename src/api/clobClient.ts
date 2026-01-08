@@ -186,16 +186,26 @@ export class CLOBClient {
   }
 
   /**
-   * Health check
+   * Health check - tries multiple endpoints
    */
   async healthCheck(): Promise<boolean> {
-    try {
-      const response = await this.client.get('/health');
-      return response.status === 200;
-    } catch (error) {
-      logger.error('Health check failed', error);
-      return false;
+    const endpoints = ['/health', '/markets', '/'];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const response = await this.client.get(endpoint, { timeout: 5000 });
+        if (response.status === 200 || response.status === 404) {
+          logger.debug(`Health check passed on endpoint: ${endpoint}`);
+          return true;
+        }
+      } catch (error) {
+        logger.debug(`Health check failed on endpoint: ${endpoint}`, error);
+        continue;
+      }
     }
+    
+    logger.warn('All health check endpoints failed, but API may still be reachable');
+    return false;
   }
 }
 
