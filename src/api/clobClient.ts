@@ -60,7 +60,7 @@ export class CLOBClient {
   /**
    * Get mid price for a market outcome
    */
-  async getMidPrice(marketId: string, outcome: number): Promise<number> {
+  async getMidPrice(marketId: string): Promise<number> {
     try {
       const orderBook = await this.getOrderBook(marketId);
       
