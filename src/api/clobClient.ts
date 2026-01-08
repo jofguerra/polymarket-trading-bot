@@ -60,22 +60,34 @@ export const getUserTrades = async (user: string, limit = 50, offset = 0): Promi
       throw new Error('Data API client not initialized');
     }
 
+    logger.debug('Fetching trades from Data API', { user, limit, offset });
+
     const { data } = await dataClient.get('/trades', {
-      params: { user, limit, offset, takerOnly: true },
+      params: { 
+        user,      // Required: User Profile Address
+        limit,     // Number of trades to fetch
+        offset,    // Pagination offset
+        takerOnly: true  // Only fetch taker trades
+      },
     });
 
+    logger.debug('Data API response received', { tradeCount: data.length });
+
     // Map Data API response to Trade interface
-    return data.map((t: any) => ({
+    const trades = data.map((t: any) => ({
       id: `${t.transactionHash}:${t.timestamp}`,
       orderId: t.transactionHash,
       marketId: t.conditionId,
       outcome: t.outcomeIndex,
       side: t.side as 'BUY' | 'SELL',
-      price: parseFloat(t.price),
-      size: parseFloat(t.size),
+      price: typeof t.price === 'string' ? parseFloat(t.price) : t.price,
+      size: typeof t.size === 'string' ? parseFloat(t.size) : t.size,
       timestamp: t.timestamp,
       traderAddress: t.proxyWallet,
     }));
+
+    logger.debug('Trades mapped successfully', { mappedCount: trades.length });
+    return trades;
   } catch (error) {
     logger.error('Failed to fetch user trades from Data API', error);
     return [];
