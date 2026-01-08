@@ -2,74 +2,30 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export interface Config {
-  // Wallet Configuration
-  userAddress: string;
-  proxyWallet: string;
-  privateKey: string;
+export const config = {
+  // Source trader to copy
+  sourceTrader: process.env.SOURCE_TRADER || '',
 
-  // API Endpoints
-  clobHttpUrl: string;
-  clobWsUrl: string;
+  // Your wallet and API credentials
+  funderAddress: process.env.FUNDER_ADDRESS || '',
+  signerPrivateKey: process.env.SIGNER_PRIVATE_KEY || '',
+  polyApiKey: process.env.POLY_API_KEY || '',
+  polySecret: process.env.POLY_SECRET || '',
+  polyPassphrase: process.env.POLY_PASSPHRASE || '',
+  signatureType: parseInt(process.env.SIGNATURE_TYPE || '1', 10),
 
-  // Trading Parameters
-  fetchInterval: number;
-  tooOldTimestamp: number;
-  retryLimit: number;
+  // Trading parameters
+  riskPercentage: parseFloat(process.env.RISK_PERCENTAGE || '2'),
+  maxPositionSize: parseFloat(process.env.MAX_POSITION_SIZE || '1000'),
+  slippageTolerance: parseFloat(process.env.SLIPPAGE_TOLERANCE || '0.5'),
 
-  // Database
-  mongoUri: string;
+  // API and network settings
+  clobHttpUrl: process.env.CLOB_HTTP_URL || 'https://clob.polymarket.com',
+  clobWsUrl: process.env.CLOB_WS_URL || 'wss://ws-subscriptions-clob.polymarket.com/ws',
+  dataApiUrl: process.env.DATA_API_URL || 'https://data-api.polymarket.com',
+  rpcUrl: process.env.RPC_URL || '',
 
-  // Blockchain
-  rpcUrl: string;
-  usdcContractAddress: string;
-
-  // Trading Config
-  maxPositionSize: number;
-  riskPercentage: number;
-  slippageTolerance: number;
-
-  // Logging
-  logLevel: string;
-}
-
-function getEnvVariable(key: string, defaultValue?: string): string {
-  const value = process.env[key];
-  if (!value && defaultValue === undefined) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-  return value || defaultValue || '';
-}
-
-export const config: Config = {
-  // Wallet Configuration
-  userAddress: getEnvVariable('USER_ADDRESS'),
-  proxyWallet: getEnvVariable('PROXY_WALLET'),
-  privateKey: getEnvVariable('PRIVATE_KEY'),
-
-  // API Endpoints
-  clobHttpUrl: getEnvVariable('CLOB_HTTP_URL', 'https://clob.polymarket.com/'),
-  clobWsUrl: getEnvVariable('CLOB_WS_URL', 'wss://ws-subscriptions-clob.polymarket.com/ws'),
-
-  // Trading Parameters
-  fetchInterval: parseInt(getEnvVariable('FETCH_INTERVAL', '1'), 10),
-  tooOldTimestamp: parseInt(getEnvVariable('TOO_OLD_TIMESTAMP', '3600'), 10),
-  retryLimit: parseInt(getEnvVariable('RETRY_LIMIT', '3'), 10),
-
-  // Database
-  mongoUri: getEnvVariable('MONGO_URI', ''),
-
-  // Blockchain
-  rpcUrl: getEnvVariable('RPC_URL', ''),
-  usdcContractAddress: getEnvVariable('USDC_CONTRACT_ADDRESS', '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'),
-
-  // Trading Config
-  maxPositionSize: parseInt(getEnvVariable('MAX_POSITION_SIZE', '1000'), 10),
-  riskPercentage: parseFloat(getEnvVariable('RISK_PERCENTAGE', '2')),
-  slippageTolerance: parseFloat(getEnvVariable('SLIPPAGE_TOLERANCE', '0.5')),
-
-  // Logging
-  logLevel: getEnvVariable('LOG_LEVEL', 'info'),
+  // Bot settings
+  fetchInterval: parseInt(process.env.FETCH_INTERVAL || '1', 10),
+  logLevel: process.env.LOG_LEVEL || 'info',
 };
-
-export default config;

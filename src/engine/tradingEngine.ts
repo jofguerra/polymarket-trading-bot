@@ -1,220 +1,87 @@
-import { logger } from '../logger';
+import axios from 'axios';
 import { config } from '../config';
-import CLOBClient from '../api/clobClient';
-import { Order, Trade, Position } from '../types';
+import { logger } from '../logger';
+import { placeOrder } from '../api/clobClient';
+import { Side } from '@polymarket/clob-client';
 
-export interface TradingEngineConfig {
-  sourceTrader: string;
-  maxOrderSize: number;
-  minOrderSize: number;
-  riskPercentage: number;
-  slippageTolerance: number;
+interface TradeActivity {
+  id: string;
+  type: string;
+  user: string;
+  timestamp: string;
+  trade_type: string;
+  collateral: string;
+  fee: string;
+  price: string;
+  size: string;
+  market: string;
+  outcome: string;
+  tx_hash: string;
 }
 
-export class TradingEngine {
-  private clobClient: CLOBClient;
-  private config: TradingEngineConfig;
-  private activeOrders: Map<string, Order> = new Map();
-  private positions: Map<string, Position> = new Map();
-  private lastSyncTime = 0;
+let lastProcessedTimestamp = new Date(0);
 
-  constructor(clobClient: CLOBClient, config: TradingEngineConfig) {
-    this.clobClient = clobClient;
-    this.config = config;
+const fetchSourceTraderActivity = async (): Promise<TradeActivity[]> => {
+  try {
+    const response = await axios.get(`${config.dataApiUrl}/activity`, {
+      params: {
+        user: config.sourceTrader,
+        type: 'TRADE',
+        limit: 100,
+      },
+    });
+    return response.data.data;
+  } catch (error) {
+    logger.error('Failed to fetch source trader activity', error);
+    return [];
+  }
+};
+
+const getMarketDetails = async (marketId: string) => {
+  // This is a placeholder - you need to implement a way to get market details
+  // like tickSize and negRisk, possibly from another API or a hardcoded map.
+  return { tickSize: '0.01', negRisk: false };
+};
+
+export const monitorAndCopyTrades = async () => {
+  logger.info('Checking for new trades to copy...');
+  const activities = await fetchSourceTraderActivity();
+
+  const newActivities = activities.filter(
+    (activity) => new Date(activity.timestamp) > lastProcessedTimestamp
+  );
+
+  if (newActivities.length === 0) {
+    logger.info('No new trades found.');
+    return;
   }
 
-  /**
-   * Monitor source trader and execute copy trades
-   */
-  async monitorAndCopyTrades(): Promise<void> {
+  // Sort by timestamp to process in order
+  newActivities.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  for (const activity of newActivities) {
     try {
-      const sourceTraderTrades = await this.clobClient.getUserTrades(this.config.sourceTrader, 50);
+      const tradeSize = parseFloat(activity.size);
+      const tradePrice = parseFloat(activity.price);
+      const side = activity.trade_type.toUpperCase() as Side;
 
-      if (sourceTraderTrades.length === 0) {
-        logger.debug('No new trades from source trader');
-        return;
+      // Apply risk management
+      const yourTradeSize = tradeSize * (config.riskPercentage / 100);
+      const cappedTradeSize = Math.min(yourTradeSize, config.maxPositionSize);
+
+      if (cappedTradeSize > 0) {
+        logger.info(`Copying trade: ${side} ${cappedTradeSize} at ${tradePrice} on market ${activity.market}`);
+        
+        // You need to map the market ID from the activity to the token ID for the order
+        // This is a placeholder - you'll need to implement this mapping
+        const marketTokenId = activity.market; // Placeholder
+
+        await placeOrder(marketTokenId, side, tradePrice, cappedTradeSize);
       }
 
-      // Filter trades newer than last sync
-      const newTrades = sourceTraderTrades.filter((trade) => trade.timestamp > this.lastSyncTime);
-
-      if (newTrades.length === 0) {
-        logger.debug('No new trades to copy');
-        return;
-      }
-
-      logger.info('Found new trades to copy', { count: newTrades.length });
-
-      for (const trade of newTrades) {
-        await this.executeCopyTrade(trade);
-      }
-
-      this.lastSyncTime = Math.max(...sourceTraderTrades.map((t) => t.timestamp));
+      lastProcessedTimestamp = new Date(activity.timestamp);
     } catch (error) {
-      logger.error('Error monitoring source trader', error);
+      logger.error(`Failed to copy trade ${activity.id}`, error);
     }
   }
-
-  /**
-   * Execute a copy trade
-   */
-  private async executeCopyTrade(sourceTrade: Trade): Promise<void> {
-    try {
-      logger.info('Executing copy trade', {
-        marketId: sourceTrade.marketId,
-        side: sourceTrade.side,
-        size: sourceTrade.size,
-        price: sourceTrade.price,
-      });
-
-      // Calculate order size based on risk management
-      const orderSize = this.calculateOrderSize(sourceTrade.size);
-
-      if (orderSize < this.config.minOrderSize) {
-        logger.warn('Order size below minimum', { orderSize, minSize: this.config.minOrderSize });
-        return;
-      }
-
-      if (orderSize > this.config.maxOrderSize) {
-        logger.warn('Order size exceeds maximum', { orderSize, maxSize: this.config.maxOrderSize });
-        return;
-      }
-
-      // Get current market price with slippage tolerance
-      const midPrice = await this.clobClient.getMidPrice(sourceTrade.marketId);
-      const adjustedPrice = this.adjustPriceForSlippage(midPrice, sourceTrade.side);
-
-      // Place the order
-      const order = await this.clobClient.placeOrder({
-        marketId: sourceTrade.marketId,
-        outcome: sourceTrade.outcome,
-        side: sourceTrade.side,
-        price: adjustedPrice,
-        size: orderSize,
-      });
-
-      this.activeOrders.set(order.id, order);
-
-      logger.info('Copy trade executed successfully', {
-        orderId: order.id,
-        size: orderSize,
-        price: adjustedPrice,
-      });
-    } catch (error) {
-      logger.error('Failed to execute copy trade', error);
-    }
-  }
-
-  /**
-   * Calculate order size based on risk management
-   */
-  private calculateOrderSize(sourceTradeSize: number): number {
-    // Apply risk percentage to scale down orders
-    const scaledSize = sourceTradeSize * (this.config.riskPercentage / 100);
-    
-    // Round to reasonable precision
-    return Math.round(scaledSize * 100) / 100;
-  }
-
-  /**
-   * Adjust price for slippage tolerance
-   */
-  private adjustPriceForSlippage(midPrice: number, side: 'BUY' | 'SELL'): number {
-    const slippageAdjustment = midPrice * (this.config.slippageTolerance / 100);
-
-    if (side === 'BUY') {
-      // For buy orders, increase price slightly to ensure execution
-      return midPrice + slippageAdjustment;
-    } else {
-      // For sell orders, decrease price slightly to ensure execution
-      return Math.max(0, midPrice - slippageAdjustment);
-    }
-  }
-
-  /**
-   * Update position tracking
-   */
-  async updatePositions(): Promise<void> {
-    try {
-      const userOrders = await this.clobClient.getUserOrders(config.proxyWallet);
-
-      // Clear old positions
-      this.positions.clear();
-
-      // Update positions from active orders
-      for (const order of userOrders) {
-        if (order.status === 'FILLED' || order.status === 'PARTIALLY_FILLED') {
-          const key = `${order.marketId}-${order.outcome}`;
-          const existingPosition = this.positions.get(key);
-
-          const filledSize = order.filledSize || 0;
-          const positionValue = filledSize * order.price;
-
-          if (existingPosition) {
-            existingPosition.balance += filledSize;
-            existingPosition.value += positionValue;
-          } else {
-            this.positions.set(key, {
-              marketId: order.marketId,
-              outcome: order.outcome,
-              balance: filledSize,
-              value: positionValue,
-              timestamp: Date.now(),
-            });
-          }
-        }
-      }
-
-      logger.debug('Positions updated', { count: this.positions.size });
-    } catch (error) {
-      logger.error('Failed to update positions', error);
-    }
-  }
-
-  /**
-   * Cancel all active orders
-   */
-  async cancelAllOrders(): Promise<void> {
-    try {
-      const cancelPromises = Array.from(this.activeOrders.keys()).map((orderId) =>
-        this.clobClient.cancelOrder(orderId).catch((error) => {
-          logger.error(`Failed to cancel order ${orderId}`, error);
-        })
-      );
-
-      await Promise.all(cancelPromises);
-      this.activeOrders.clear();
-
-      logger.info('All orders cancelled');
-    } catch (error) {
-      logger.error('Failed to cancel all orders', error);
-    }
-  }
-
-  /**
-   * Get current positions
-   */
-  getPositions(): Position[] {
-    return Array.from(this.positions.values());
-  }
-
-  /**
-   * Get active orders
-   */
-  getActiveOrders(): Order[] {
-    return Array.from(this.activeOrders.values());
-  }
-
-  /**
-   * Get statistics
-   */
-  getStats() {
-    return {
-      activeOrdersCount: this.activeOrders.size,
-      positionsCount: this.positions.size,
-      totalPositionValue: Array.from(this.positions.values()).reduce((sum, pos) => sum + pos.value, 0),
-    };
-  }
-}
-
-export default TradingEngine;
+};
