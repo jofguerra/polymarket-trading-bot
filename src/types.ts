@@ -35,8 +35,9 @@ export interface Order {
 
 export interface Trade {
   id: string;
-  orderId: string;
-  marketId: string;
+  orderId: string;          // transactionHash
+  marketId: string;         // conditionId
+  tokenId: string;          // asset (THIS is what you trade)
   outcome: number;
   side: 'BUY' | 'SELL';
   price: number;
