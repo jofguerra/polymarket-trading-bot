@@ -1,90 +1,57 @@
 import axios, { AxiosInstance } from 'axios';
-import { ClobClient, ApiKeyCreds, Side } from '@polymarket/clob-client';
-import { Wallet } from 'ethers';
 import { config } from '../config';
 import { logger } from '../logger';
 import { Trade } from '../types';
 
-const HOST = config.clobHttpUrl;
-const CHAIN_ID = 137; // Polygon
-
-let clob: ClobClient;
 let dataClient: AxiosInstance;
 
 export const initializeClobClient = () => {
   try {
-    const signer = new Wallet(config.signerPrivateKey);
-
-    const apiCreds: ApiKeyCreds = {
-      key: config.polyApiKey,
-      secret: config.polySecret,
-      passphrase: config.polyPassphrase,
-    };
-
-    clob = new ClobClient(
-      HOST,
-      CHAIN_ID,
-      signer,
-      apiCreds,
-      config.signatureType,
-      config.funderAddress
-    );
-
-    // Initialize Data API client
+    // Initialize Data API client for fetching trades
     dataClient = axios.create({
       baseURL: config.dataApiUrl,
       timeout: 10000,
     });
 
-    logger.info('ClobClient and Data API client initialized successfully', {
-      clobUrl: HOST,
+    logger.info('Data API client initialized successfully', {
       dataApiUrl: config.dataApiUrl,
-      chainId: CHAIN_ID,
     });
   } catch (error) {
-    logger.error('Failed to initialize ClobClient', error);
+    logger.error('Failed to initialize Data API client', error);
     throw error;
   }
-};
-
-export const getClobClient = (): ClobClient => {
-  if (!clob) {
-    throw new Error('ClobClient not initialized. Call initializeClobClient() first.');
-  }
-  return clob;
 };
 
 /**
  * Fetch trades for a specific user from the Data API
  * Maps Data API response to our Trade interface
+ * Version: 2.0 - Fixed Data API implementation with user parameter
  */
 export const getUserTrades = async (user: string, limit = 50, offset = 0): Promise<Trade[]> => {
   try {
     if (!dataClient) {
-      throw new Error('Data API client not initialized');
+      logger.error('Data API client not initialized');
+      return [];
     }
 
     const params = { 
-      user,      // Required: User Profile Address
-      limit,     // Number of trades to fetch
-      offset,    // Pagination offset
-      takerOnly: true  // Only fetch taker trades
+      user,           // REQUIRED: User Profile Address
+      limit,          // Number of trades to fetch
+      offset,         // Pagination offset
+      takerOnly: true // Only fetch taker trades
     };
 
-    // Log the exact URL and parameters being used
-    const fullUrl = `${config.dataApiUrl}/trades?${new URLSearchParams(params as any).toString()}`;
     logger.info('Fetching trades from Data API', { 
-      fullUrl,
-      baseURL: config.dataApiUrl,
-      endpoint: '/trades',
-      params 
+      user,
+      limit,
+      offset,
+      endpoint: '/trades'
     });
 
     const { data } = await dataClient.get('/trades', { params });
 
     logger.info('Data API response received', { 
-      tradeCount: data.length,
-      firstTrade: data.length > 0 ? data[0] : null
+      tradeCount: data.length
     });
 
     // Map Data API response to Trade interface
@@ -108,8 +75,6 @@ export const getUserTrades = async (user: string, limit = 50, offset = 0): Promi
       status: error.response?.status,
       statusText: error.response?.statusText,
       url: error.config?.url,
-      params: error.config?.params,
-      fullUrl: error.config?.baseURL + error.config?.url,
       baseURL: error.config?.baseURL,
     });
     return [];
@@ -117,30 +82,17 @@ export const getUserTrades = async (user: string, limit = 50, offset = 0): Promi
 };
 
 /**
- * Place an order using the CLOB SDK
+ * Placeholder for order placement
+ * In production, this would use the CLOB SDK to place orders
  */
-export const placeOrder = async (market: string, side: Side, price: number, size: number) => {
+export const placeOrder = async (market: string, side: string, price: number, size: number) => {
   try {
-    // Ensure CLOB client is initialized
-    getClobClient();
-    
-    logger.info('Attempting to place order', {
+    logger.info('Order placement logged', {
       market,
       side,
       price,
       size,
     });
-
-    // The CLOB SDK has different methods for placing orders
-    // For now, we'll log the order intent
-    // In production, you would use the appropriate SDK method
-    logger.info('Order placement would be executed here', {
-      market,
-      side,
-      price,
-      size,
-    });
-
     return { success: true, market, side, price, size };
   } catch (error) {
     logger.error('Failed to place order', error);

@@ -14,7 +14,7 @@ class TradingBot {
     logger.info('Starting Polymarket Copy Trading Bot');
 
     try {
-      // Initialize ClobClient with authentication
+      // Initialize Data API client
       initializeClobClient();
 
       // Start monitoring loop
