@@ -1,19 +1,19 @@
 import { config } from '../config';
 import { logger } from '../logger';
 import { getUserTrades, placeOrder } from '../api/clobClient';
-import { Trade } from "../types";
+import { Trade } from '../types';
 
 let lastProcessedTimestamp = 0;
 
 /**
  * Monitor source trader and copy their trades
  */
-export const monitorAndCopyTrades = async () => {
+export const monitorAndCopyTrades = async (): Promise<void> => {
   try {
     logger.info('Checking for new trades from source trader...');
 
     // Fetch trades from the source trader using Data API
-    const trades = await getUserTrades(config.sourceTrader, 100, 0);
+    const trades: Trade[] = await getUserTrades(config.sourceTrader, 100, 0);
 
     if (trades.length === 0) {
       logger.debug('No trades found for source trader');
@@ -21,7 +21,7 @@ export const monitorAndCopyTrades = async () => {
     }
 
     // Filter for new trades (trades after the last processed timestamp)
-    const newTrades = trades.filter((trade) => trade.timestamp > lastProcessedTimestamp);
+    const newTrades: Trade[] = trades.filter((trade: Trade) => trade.timestamp > lastProcessedTimestamp);
 
     if (newTrades.length === 0) {
       logger.debug('No new trades to copy');
@@ -31,7 +31,7 @@ export const monitorAndCopyTrades = async () => {
     logger.info(`Found ${newTrades.length} new trades to copy`);
 
     // Sort trades by timestamp to process in order
-    newTrades.sort((a, b) => a.timestamp - b.timestamp);
+    newTrades.sort((a: Trade, b: Trade) => a.timestamp - b.timestamp);
 
     // Process each trade
     for (const trade of newTrades) {
@@ -46,7 +46,7 @@ export const monitorAndCopyTrades = async () => {
 /**
  * Execute a copy trade based on source trader's trade
  */
-const executeCopyTrade = async (sourceTrade: Trade) => {
+const executeCopyTrade = async (sourceTrade: Trade): Promise<void> => {
   try {
     logger.info('Executing copy trade', {
       marketId: sourceTrade.marketId,
@@ -69,10 +69,10 @@ const executeCopyTrade = async (sourceTrade: Trade) => {
 
     logger.info(`Placing order: ${sourceTrade.side} ${cappedSize} at ${adjustedPrice}`);
 
-    // Place the order using CLOB SDK
+    // Place the order (stubbed in clobClient.ts for now)
     await placeOrder(
-      sourceTrade.marketId,
-      sourceTrade.side as Side,
+      sourceTrade.marketId,     // token/market identifier in your current mapping
+      sourceTrade.side,         // 'BUY' | 'SELL'
       adjustedPrice,
       cappedSize
     );
