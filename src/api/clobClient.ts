@@ -1,100 +1,111 @@
-import axios, { AxiosInstance } from "axios";
-import { logger } from "../logger";
-import { Trade } from "../types";
+import axios, { AxiosInstance } from 'axios';
+import { config } from '../config';
+import { logger } from '../logger';
+import { Trade } from '../types';
 
-let dataClient: AxiosInstance | null = null;
+let dataClient: AxiosInstance;
 
-function resolveDataApiBase(): string {
-  const raw =
-    process.env.DATA_API_URL ||      // <-- your Railway variable in the screenshot
-    process.env.DATA_API_URL ||      // fallback if you used another name earlier
-    "https://data-api.polymarket.com";
-
-  // remove trailing slashes, and guard if someone sets ".../trades"
-  return raw.replace(/\/+$/, "").replace(/\/trades$/, "");
-}
-
-export function initializeClobClient(): void {
-  const base = resolveDataApiBase();
-
-  dataClient = axios.create({
-    baseURL: base,
-    timeout: 10000,
-  });
-
-  logger.info("Data API client initialized", { dataApiBaseUrl: base });
-}
-
-/**
- * Fetch source trader trades from Polymarket Data API.
- * user should be the SOURCE trader's proxyWallet address.
- */
-export async function getUserTrades(
-  user: string,
-  limit: number = 50,
-  offset: number = 0
-): Promise<Trade[]> {
-  if (!dataClient) initializeClobClient();
-
+export const initializeClobClient = () => {
   try {
-    const res = await dataClient!.get("/trades", {
-      params: { user, limit, offset, takerOnly: true },
+    // Initialize Data API client for fetching trades
+    dataClient = axios.create({
+      baseURL: config.dataApiUrl,
+      timeout: 10000,
     });
 
-    const rows: any[] = Array.isArray(res.data) ? res.data : [];
-
-    // Map Data API -> src/types.ts Trade
-    return rows.map((t: any) => ({
-      id: `${t.transactionHash}:${t.asset}:${t.timestamp}`,
-      orderId: String(t.transactionHash ?? ""),
-      marketId: String(t.conditionId ?? ""),
-      outcome: Number(t.outcomeIndex ?? 0),
-      side: String(t.side ?? "BUY").toUpperCase() === "SELL" ? "SELL" : "BUY",
-      price: typeof t.price === "string" ? parseFloat(t.price) : Number(t.price ?? 0),
-      size: typeof t.size === "string" ? parseFloat(t.size) : Number(t.size ?? 0),
-      timestamp: Number(t.timestamp ?? 0),
-      traderAddress: String(t.proxyWallet ?? user),
-    }));
-  } catch (err: any) {
-    logger.error(`Failed to fetch trades for ${user}`, {
-      status: err?.response?.status,
-      baseURL: err?.config?.baseURL,
-      url: err?.config?.url,
-      fullUrl: `${err?.config?.baseURL ?? ""}${err?.config?.url ?? ""}`,
-      params: err?.config?.params,
-      responseData: err?.response?.data,
-      message: err?.message,
+    logger.info('Data API client initialized successfully', {
+      dataApiUrl: config.dataApiUrl,
     });
-    throw err;
+  } catch (error) {
+    logger.error('Failed to initialize Data API client', error);
+    throw error;
   }
-}
+};
 
 /**
- * Stub for now. Real trading requires signed orders + authenticated CLOB.
- * Keep this so the engine compiles/runs.
+ * Fetch trades for a specific user from the Data API
+ * Maps Data API response to our Trade interface
+ * Version: 2.1 - Added detailed logging to debug URL issues
  */
-export async function placeOrder(
-  tokenId: string,
-  side: "BUY" | "SELL",
-  price: number,
-  size: number
-): Promise<{ success: boolean; tokenId: string; side: "BUY" | "SELL"; price: number; size: number }> {
-  logger.info("placeOrder (stub)", { tokenId, side, price, size });
-  return { success: true, tokenId, side, price, size };
-}
+export const getUserTrades = async (user: string, limit = 50, offset = 0): Promise<Trade[]> => {
+  try {
+    if (!dataClient) {
+      logger.error('Data API client not initialized');
+      return [];
+    }
 
-export class CLOBClient {
-  constructor() {
-    if (!dataClient) initializeClobClient();
+    const params = { 
+      user,           // REQUIRED: User Profile Address
+      limit,          // Number of trades to fetch
+      offset,         // Pagination offset
+      takerOnly: true // Only fetch taker trades
+    };
+
+    // Log the exact URL being called
+    logger.info('getUserTrades request', {
+      baseURL: dataClient?.defaults?.baseURL,
+      path: '/trades',
+      params,
+      fullUrl: `${dataClient?.defaults?.baseURL ?? ''}/trades?user=${user}&limit=${limit}&offset=${offset}`
+    });
+
+    const { data } = await dataClient.get('/trades', { params });
+
+    logger.info('Data API response received', { 
+      tradeCount: data.length
+    });
+
+    // Map Data API response to Trade interface
+    const trades = data.map((t: any) => ({
+      id: `${t.transactionHash}:${t.timestamp}`,
+      orderId: t.transactionHash,
+      marketId: t.conditionId,
+      outcome: t.outcomeIndex,
+      side: t.side as 'BUY' | 'SELL',
+      price: typeof t.price === 'string' ? parseFloat(t.price) : t.price,
+      size: typeof t.size === 'string' ? parseFloat(t.size) : t.size,
+      timestamp: t.timestamp,
+      traderAddress: t.proxyWallet,
+    }));
+
+    logger.debug('Trades mapped successfully', { mappedCount: trades.length });
+    return trades;
+  } catch (error: any) {
+    logger.error('getUserTrades failed', {
+      status: error?.response?.status,
+      baseURL: error?.config?.baseURL,
+      url: error?.config?.url,
+      fullUrl: `${error?.config?.baseURL ?? ''}${error?.config?.url ?? ''}`,
+      params: error?.config?.params,
+      responseData: error?.response?.data,
+    });
+    return [];
   }
+};
 
-  async getUserTrades(user: string, limit = 50, offset = 0): Promise<Trade[]> {
-    return getUserTrades(user, limit, offset);
+/**
+ * Stub: Get user orders (disabled until proper CLOB auth is implemented)
+ * Returns empty array to avoid 404 spam
+ */
+export const getUserOrders = async (_user: string) => {
+  return [];
+};
+
+/**
+ * Placeholder for order placement
+ * In production, this would use the CLOB SDK to place orders
+ */
+export const placeOrder = async (market: string, side: string, price: number, size: number) => {
+  try {
+    logger.info('Order placement logged', {
+      market,
+      side,
+      price,
+      size,
+    });
+    return { success: true, market, side, price, size };
+  } catch (error) {
+    logger.error('Failed to place order', error);
+    throw error;
   }
-
-  async placeOrder(tokenId: string, side: "BUY" | "SELL", price: number, size: number) {
-    return placeOrder(tokenId, side, price, size);
-  }
-}
-
-export default CLOBClient;
+};
