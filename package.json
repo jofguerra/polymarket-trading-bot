@@ -2,11 +2,12 @@
   "name": "polymarket-copy-trading-bot",
   "version": "1.1.0",
   "description": "Automated copy trading bot for Polymarket prediction markets",
+  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "dev": "ts-node --esm src/index.ts",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts"
   },
