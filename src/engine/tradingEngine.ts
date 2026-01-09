@@ -1,8 +1,7 @@
 import { config } from '../config';
 import { logger } from '../logger';
 import { getUserTrades, placeOrder } from '../api/clobClient';
-import { Trade } from '../types';
-import { Side } from '@polymarket/clob-client';
+import { Trade } from "../types";
 
 let lastProcessedTimestamp = 0;
 
