@@ -6,32 +6,29 @@ import { Market, OrderBook, Order, Trade } from '../types';
 export class CLOBClient {
   private clobClient: AxiosInstance;
   private dataClient: AxiosInstance;
+  private dataBase: string;
 
   constructor() {
-    // CLOB (leave it if you still want markets/orderbooks)
     const clobBase = (config.clobHttpUrl || 'https://clob.polymarket.com').replace(/\/+$/, '');
     this.clobClient = axios.create({ baseURL: clobBase, timeout: 10000 });
 
-    // DATA API (this is what you need for copy-trading)
-    const dataBase = (config.dataApiUrl || 'https://data-api.polymarket.com')
+    // IMPORTANT: Data API base
+    this.dataBase = (config.dataApiUrl || 'https://data-api.polymarket.com')
       .replace(/\/+$/, '')
       .replace(/\/trades$/, '');
 
-    this.dataClient = axios.create({ baseURL: dataBase, timeout: 10000 });
+    this.dataClient = axios.create({ baseURL: this.dataBase, timeout: 10000 });
 
-    logger.info('HTTP clients ready', { clobBase, dataBase });
+    logger.info('HTTP clients ready', { clobBase, dataBase: this.dataBase });
   }
 
-  // --- Best-effort CLOB calls (may or may not exist depending on host) ---
+  // Best-effort CLOB calls (optional)
   async getMarkets(): Promise<Market[]> {
     try {
       const res = await this.clobClient.get('/markets');
       return Array.isArray(res.data) ? res.data : [];
     } catch (e: any) {
-      logger.warn('getMarkets failed (non-fatal)', {
-        status: e?.response?.status,
-        fullUrl: `${e?.config?.baseURL ?? ''}${e?.config?.url ?? ''}`,
-      });
+      logger.warn('getMarkets failed (non-fatal)', { status: e?.response?.status });
       return [];
     }
   }
@@ -41,11 +38,14 @@ export class CLOBClient {
     return res.data;
   }
 
-  // --- COPY TRADING: source trader fills (THIS MUST BE DATA API) ---
+  // ✅ COPY TRADING: use DATA API (this is the fix)
   async getUserTrades(userAddress: string, limit: number = 50, offset: number = 0): Promise<Trade[]> {
+    const url = `${this.dataBase}/trades`;
+
     try {
-      const res = await this.dataClient.get('/trades', {
+      const res = await axios.get(url, {
         params: { user: userAddress, limit, offset, takerOnly: true },
+        timeout: 10000,
       });
 
       const rows: any[] = Array.isArray(res.data) ? res.data : [];
@@ -64,7 +64,7 @@ export class CLOBClient {
     } catch (e: any) {
       logger.error(`Failed to fetch trades for ${userAddress}`, {
         status: e?.response?.status,
-        fullUrl: `${e?.config?.baseURL ?? ''}${e?.config?.url ?? ''}`,
+        url,
         params: e?.config?.params,
         responseData: e?.response?.data,
       });
@@ -72,14 +72,14 @@ export class CLOBClient {
     }
   }
 
-  // --- STOP 404 SPAM: until you implement authenticated CLOB, do NOT call /users/<addr>/orders ---
+  // ✅ prevent orders 404 spam (until you implement authenticated CLOB)
   async getUserOrders(_userAddress: string): Promise<Order[]> {
     return [];
   }
 
-  // Stub trading until you wire real authenticated Polymarket SDK
+  // Stub trading
   async placeOrder(_order: any): Promise<Order> {
-    logger.warn('placeOrder is stubbed (no real trading implemented yet).');
+    logger.warn('placeOrder is stubbed (no real trading yet).');
     return {
       id: `stub-${Date.now()}`,
       marketId: '',
@@ -94,3 +94,4 @@ export class CLOBClient {
 }
 
 export default CLOBClient;
+
