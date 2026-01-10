@@ -1,7 +1,7 @@
-import { logger } from './logger';
-import { config } from './config';
-import { initializeClobClient } from './api/clobClient';
-import { monitorAndCopyTrades } from './engine/tradingEngine';
+import { logger } from './logger.js';
+import { config } from './config.js';
+import { initializeClobClient } from './api/clobClient.js';
+import { monitorAndCopyTrades } from './engine/tradingEngine.js';
 
 class TradingBot {
   private monitoringInterval: NodeJS.Timeout | null = null;
@@ -14,12 +14,8 @@ class TradingBot {
     logger.info('Starting Polymarket Copy Trading Bot');
 
     try {
-      // Initialize Data API client
       initializeClobClient();
-
-      // Start monitoring loop
       this.startMonitoring();
-
       logger.info('Bot started successfully');
     } catch (error) {
       logger.error('Failed to start bot', error);
@@ -29,18 +25,15 @@ class TradingBot {
 
   stop(): void {
     logger.info('Stopping bot...');
-    if (this.monitoringInterval) {
-      clearInterval(this.monitoringInterval);
-    }
+    if (this.monitoringInterval) clearInterval(this.monitoringInterval);
     process.exit(0);
   }
 
   private startMonitoring(): void {
     logger.info(`Starting monitoring loop, checking every ${config.fetchInterval} seconds`);
-    this.monitoringInterval = setInterval(
-      () => monitorAndCopyTrades().catch(err => logger.error('Error in monitoring loop', err)),
-      config.fetchInterval * 1000
-    );
+    this.monitoringInterval = setInterval(() => {
+      monitorAndCopyTrades().catch((err: unknown) => logger.error('Error in monitoring loop', err));
+    }, config.fetchInterval * 1000);
   }
 
   private setupProcessHooks(): void {
