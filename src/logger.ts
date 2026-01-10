@@ -1,70 +1,40 @@
-import { config } from './config';
+import { config } from './config.js';
 
-export enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3,
-}
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-const logLevelMap: Record<string, LogLevel> = {
-  debug: LogLevel.DEBUG,
-  info: LogLevel.INFO,
-  warn: LogLevel.WARN,
-  error: LogLevel.ERROR,
+const levels: Record<LogLevel, number> = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40
 };
 
-class Logger {
-  private logLevel: LogLevel;
+const currentLevel: LogLevel = (config.logLevel as LogLevel) || 'info';
 
-  constructor() {
-    this.logLevel = logLevelMap[config.logLevel.toLowerCase()] || LogLevel.INFO;
-  }
-
-  private formatTimestamp(): string {
-    return new Date().toISOString();
-  }
-
-  private formatMessage(level: string, message: string, data?: unknown): string {
-    const timestamp = this.formatTimestamp();
-    let output = `[${timestamp}] [${level}] ${message}`;
-    if (data) {
-      output += ` ${JSON.stringify(data)}`;
-    }
-    return output;
-  }
-
-  debug(message: string, data?: unknown): void {
-    if (this.logLevel <= LogLevel.DEBUG) {
-      console.log(this.formatMessage('DEBUG', message, data));
-    }
-  }
-
-  info(message: string, data?: unknown): void {
-    if (this.logLevel <= LogLevel.INFO) {
-      console.log(this.formatMessage('INFO', message, data));
-    }
-  }
-
-  warn(message: string, data?: unknown): void {
-    if (this.logLevel <= LogLevel.WARN) {
-      console.warn(this.formatMessage('WARN', message, data));
-    }
-  }
-
-  error(message: string, error?: Error | unknown): void {
-    if (this.logLevel <= LogLevel.ERROR) {
-      let errorData: unknown = error;
-      if (error instanceof Error) {
-        errorData = {
-          message: error.message,
-          stack: error.stack,
-        };
-      }
-      console.error(this.formatMessage('ERROR', message, errorData));
-    }
-  }
+function shouldLog(level: LogLevel): boolean {
+  return levels[level] >= levels[currentLevel];
 }
 
-export const logger = new Logger();
-export default logger;
+function safeMeta(meta: unknown): unknown {
+  if (meta instanceof Error) return { message: meta.message, stack: meta.stack };
+  return meta;
+}
+
+export const logger = {
+  debug(msg: string, meta?: unknown) {
+    if (!shouldLog('debug')) return;
+    console.log(`[DEBUG] ${msg}`, meta !== undefined ? safeMeta(meta) : '');
+  },
+  info(msg: string, meta?: unknown) {
+    if (!shouldLog('info')) return;
+    console.log(`[INFO] ${msg}`, meta !== undefined ? safeMeta(meta) : '');
+  },
+  warn(msg: string, meta?: unknown) {
+    if (!shouldLog('warn')) return;
+    console.warn(`[WARN] ${msg}`, meta !== undefined ? safeMeta(meta) : '');
+  },
+  error(msg: string, meta?: unknown) {
+    if (!shouldLog('error')) return;
+    console.error(`[ERROR] ${msg}`, meta !== undefined ? safeMeta(meta) : '');
+  }
+};
